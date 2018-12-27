@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Linq;
-
+using Microsoft.TeamFoundation.SourceControl.WebApi;
 using Microsoft.TeamFoundation.WorkItemTracking.WebApi;
 using Microsoft.TeamFoundation.WorkItemTracking.WebApi.Models;
 using Microsoft.VisualStudio.Services.Client;
@@ -10,34 +10,55 @@ namespace ClientLibraryConsoleAppSample
 {
     class Program
     {
-        //============= Config [Edit these with your settings] =====================
-        internal const string azureDevOpsOrganizationUrl = "https://dev.azure.com/organization"; //change to the URL of your Azure DevOps account; NOTE: This must use HTTPS
-        // internal const string vstsCollectioUrl = "http://myserver:8080/tfs/DefaultCollection" alternate URL for a TFS collection
-        //==========================================================================
+        internal const string azureDevOpsOrganizationUrl = "https://dev.azure.com/lexim1/"; //change to the URL of your Azure DevOps account; NOTE: This must use HTTPS
 
-        //Console application to execute a user defined work item query
         static void Main(string[] args)
         {
-            //Prompt user for credential
-            VssConnection connection = new VssConnection(new Uri(azureDevOpsOrganizationUrl), new VssClientCredentials());
+            var connection = new VssConnection(new Uri(azureDevOpsOrganizationUrl), new VssClientCredentials());
 
-            //create http client and query for resutls
-            WorkItemTrackingHttpClient witClient = connection.GetClient<WorkItemTrackingHttpClient>();
-            Wiql query = new Wiql() { Query = "SELECT [Id], [Title], [State] FROM workitems WHERE [Work Item Type] = 'Bug' AND [Assigned To] = @Me" };
-            WorkItemQueryResult queryResults = witClient.QueryByWiqlAsync(query).Result;
+            var git = connection.GetClient<GitHttpClient>();
 
-            //Display reults in console
-            if (queryResults == null || queryResults.WorkItems.Count() == 0)
+            var repos = git.GetRepositoriesAsync().Result;
+
+            var repo = repos.First(x => x.Name.ToLower() == "ecipsa");
+
+            var master = git.GetBranchAsync(repo.ProjectReference.Id, repo.Id, "master").Result;
+
+            //var branch = git.GetBranchAsync(repo.ProjectReference.Id, repo.Id, "AplicacionCobranza2.0").Result;
+            //var branch2 = git.GetBranchAsync(repo.ProjectReference.Id, repo.Id, "DEV-2018-07-ControlLiquidacionMasiva").Result;
+            var branch = git.GetBranchAsync(repo.ProjectReference.Id, repo.Id, "2018-12.2").Result;
+            var branch2 = git.GetBranchAsync(repo.ProjectReference.Id, repo.Id, "TEST").Result;
+
+            var prs = git.GetPullRequestsAsync(repo.ProjectReference.Id, repo.Id, new GitPullRequestSearchCriteria()).Result;
+
+            var branchName = "refs/heads/" + branch.Name;
+
+            var pr = new GitPullRequest
             {
-                Console.WriteLine("Query did not find any results");
-            }
-            else
-            {
-                foreach (var item in queryResults.WorkItems)
-                {
-                    Console.WriteLine(item.Id);
-                }
-            }
+                //RemoteUrl = repo.RemoteUrl,
+                Repository = repo,
+                SourceRefName = "refs/heads/" + branch.Name,
+                TargetRefName = "refs/heads/" + branch2.Name,
+                Title = $"CI: {branch.Name} -> {branch2.Name}",
+            };
+
+            //var r = git.CreatePullRequestAsync(pr, repo.Id).Result;
+            //r = git.GetPullRequestByIdAsync(r.PullRequestId).Result;
+
+            var _ref = git.GetRefsAsync(repo.Id).Result.First(x => x.Name == branchName);
+
+            // create a new branch from the source
+            GitRefUpdateResult refCreateResult = git.UpdateRefsAsync(
+                new GitRefUpdate[] { new GitRefUpdate() {
+                    OldObjectId = new string('0', 40),
+                    NewObjectId = _ref.ObjectId,
+                    Name = $"refs/heads/vsts-api-sample/prueba-branch-ci",
+                } },
+                repositoryId: repo.Id).Result.First();
+
+            Console.ReadLine();
+
         }
     }
 }
+
